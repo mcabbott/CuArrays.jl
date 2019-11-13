@@ -1,10 +1,12 @@
 include:
   - 'https://raw.githubusercontent.com/JuliaGPU/gitlab-ci/master/templates/v6.yml'
 
-image: nvidia/cuda:10.1-cudnn7-devel
+image: ubuntu:bionic
 
 variables:
   JULIA_CUDA_VERBOSE: 'true'
+  NVIDIA_VISIBLE_DEVICES: 'all'
+  NVIDIA_DRIVER_CAPABILITIES: 'compute,utility'
 
 
 # Julia versions
@@ -58,28 +60,58 @@ julia:nightly:
 #       https://developer.nvidia.com/rdp/cudnn-archive
 
 cuda:10.1:
-  image: nvidia/cuda:10.1-cudnn7-devel
   extends:
     - .julia:1.2
     - .test
+  variables:
+    JULIA_CUDA_VERSION: '10.1'
   tags:
     - nvidia
 
 cuda:10.0:
-  image: nvidia/cuda:10.0-cudnn7-devel
   extends:
     - .julia:1.2
     - .test
+  variables:
+    JULIA_CUDA_VERSION: '10.0'
   tags:
     - nvidia
 
 cuda:9.2:
-  image: nvidia/cuda:9.2-cudnn7-devel
   extends:
     - .julia:1.2
     - .test
+  variables:
+    JULIA_CUDA_VERSION: '9.2'
   tags:
     - nvidia
+
+# NOTE: CUDA 9.0 is broken
+
+cuda:local:
+  extends:
+    - .julia:1.2
+    - .test
+  image: nvidia/cuda:10.1-devel-ubuntu18.04
+  variables:
+    JULIA_CUDA_USE_BINARYBUILDER: 'false'
+  tags:
+    - nvidia
+
+cuda:none:
+  extends:
+    - .julia:1.2
+    - .test
+  variables:
+    JULIA_CUDA_USE_BINARYBUILDER: 'false'
+  script:
+    - julia -e 'using InteractiveUtils;
+                versioninfo()'
+    - julia --project -e 'using Pkg;
+                          Pkg.instantiate();
+                          Pkg.build();
+                          Pkg.API.precompile();'
+    - julia --project -e 'using CuArrays'
 
 
 # hardware platforms
@@ -122,17 +154,6 @@ pool:split:
   variables:
     CUARRAYS_MEMORY_POOL: 'split'
 
-precompile:
-  extends: .julia:1.2
-  image: ubuntu:bionic
-  script:
-    - julia -e 'using InteractiveUtils;
-                versioninfo()'
-    - julia --project -e 'using Pkg;
-                          Pkg.instantiate();
-                          Pkg.build();
-                          Pkg.API.precompile()'
-
 
 # reverse tests
 
@@ -149,10 +170,12 @@ flux:
     - julia -e 'using Pkg;
                 Pkg.develop("Flux");'
     - julia --project -e 'using Pkg;
-                          Pkg.instantiate()'
+                          Pkg.instantiate();
+                          Pkg.build();'
     - julia --project=$FLUX -e 'using Pkg;
                                 Pkg.instantiate();
-                                Pkg.add(["Documenter"])'
+                                Pkg.build();
+                                Pkg.add(["Documenter"]);'
     - JULIA_LOAD_PATH=".:$FLUX::" julia $FLUX/test/runtests.jl
   allow_failure: true
 

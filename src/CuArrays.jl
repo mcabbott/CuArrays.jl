@@ -16,6 +16,16 @@ using Libdl
 using Requires
 
 
+const depsfile = joinpath(dirname(dirname(@__FILE__)), "deps", "deps.jl")
+if isfile(depsfile)
+    include(depsfile)
+else
+    error("CuArrays is not properly installed. Please run Pkg.build(\"CuArrays\")")
+end
+
+const libcutensor = Sys.iswindows() ? "cutensor" : "libcutensor"
+
+
 ## source code includes
 
 include("memory.jl")
@@ -51,8 +61,8 @@ const __initialized__ = Ref(false)
 functional() = __initialized__[]
 
 export has_cudnn, has_cutensor
-has_cudnn() = Libdl.dlopen_e(CUDNN.libcudnn[]) !== C_NULL
-has_cutensor() = Libdl.dlopen_e(CUTENSOR.libcutensor[]) !== C_NULL
+has_cudnn() = Libdl.dlopen_e(libcudnn) !== C_NULL
+has_cutensor() = Libdl.dlopen_e(libcutensor) !== C_NULL
 
 function __init__()
     precompiling = ccall(:jl_generating_output, Cint, ()) != 0
@@ -66,36 +76,13 @@ function __init__()
     end
 
     try
-        # discover libraries
-        toolkit = find_toolkit()
-        for name in ("cublas", "cusparse", "cusolver", "cufft", "curand", "cudnn", "cutensor")
-            mod = getfield(CuArrays, Symbol(uppercase(name)))
-            lib = Symbol("lib$name")
-            handle = getfield(mod, lib)
-
-            # on Windows, the library name is version dependent
-            if Sys.iswindows()
-                cuda = CUDAnative.version()
-                suffix = cuda >= v"10.1" ? "$(cuda.major)" : "$(cuda.major)$(cuda.minor)"
-                handle[] = "$(name)$(Sys.WORD_SIZE)_$(suffix)"
-            end
-
-            # check if we can't find the library
-            if Libdl.dlopen_e(handle[]) == C_NULL
-                path = find_cuda_library(name, toolkit)
-                if path !== nothing
-                    handle[] = path
-                end
-            end
+        # if we're not using BinaryBuilder, we can't be sure of everything at build-time
+        if !use_binarybuilder
+            silent || @warn """Automatic installation of the CUDA libraries failed; see $buildlog for more details
+                               or call Pkg.build("CuArrays") to try again. Otherwise, you will need to install CUDA and make sure it is discoverable."""
         end
 
-        # library dependencies
-        CUBLAS.version()
-        CUSPARSE.version()
-        CUSOLVER.version()
-        CUFFT.version()
-        CURAND.version()
-        # CUDNN and CUTENSOR are optional
+        check_deps()
 
         # library compatibility
         if has_cutensor()
