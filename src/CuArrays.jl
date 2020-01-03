@@ -75,6 +75,7 @@ function __init__()
         return
     end
 
+    buildlog = joinpath(dirname(@__DIR__), "deps", "build.log")
     try
         # if we're not using BinaryBuilder, we can't be sure of everything at build-time
         if !use_binarybuilder
