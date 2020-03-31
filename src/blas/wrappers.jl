@@ -937,10 +937,10 @@ for (fname, elty) in
         function gemm_strided_batched!(transA::Char,
                                transB::Char,
                                alpha::($elty),
-                               A::CuArray{$elty, 3},
-                               B::CuArray{$elty, 3},
+                               A::AbstractArray{$elty, 3},
+                               B::AbstractArray{$elty, 3},
                                beta::($elty),
-                               C::CuArray{$elty, 3})
+                               C::AbstractArray{$elty, 3})
            m = size(A, transA == 'N' ? 1 : 2)
            k = size(A, transA == 'N' ? 2 : 1)
            n = size(B, transB == 'N' ? 2 : 1)
@@ -967,15 +967,15 @@ for (fname, elty) in
         function gemm_strided_batched(transA::Char,
                       transB::Char,
                       alpha::($elty),
-                      A::CuArray{$elty, 3},
-                      B::CuArray{$elty, 3})
+                      A::AbstractArray{$elty, 3},
+                      B::AbstractArray{$elty, 3})
             C = similar(B, (size(A, transA == 'N' ? 1 : 2), size(B, transB == 'N' ? 2 : 1), size(A, 3)))
             gemm_strided_batched!(transA, transB, alpha, A, B, zero($elty), C )
         end
         function gemm_strided_batched(transA::Char,
                       transB::Char,
-                      A::CuArray{$elty, 3},
-                      B::CuArray{$elty, 3})
+                      A::AbstractArray{$elty, 3},
+                      B::AbstractArray{$elty, 3})
             gemm_strided_batched(transA, transB, one($elty), A, B)
         end
     end
