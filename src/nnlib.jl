@@ -34,14 +34,51 @@ end
 # Batched matrix multiplication
 
 const batched_gemm_args = [
-    (:(CuArray{T, 3}), 'N'),
-    (:(NNlib.BatchedTranspose{T, <:CuArray{T, 3}}), 'T'),
-    (:(NNlib.BatchedAdjoint{T, <:CuArray{T, 3}}), 'C')
+    (:(AbstractArray{T, 3}), 'N', :identity),
+    (:(NNlib.BatchedTranspose{T, <:AbstractArray{T, 3}}), 'T', :batched_transpose),
+    (:(NNlib.BatchedAdjoint{T, <:AbstractArray{T, 3}}), 'C', :batched_adjoint)
 ]
 
-for (TA, transA) in batched_gemm_args, (TB, transB) in batched_gemm_args
+using NNlib: batched_mul!, BatchedTranspose, BatchedAdjoint, batched_transpose, batched_adjoint
+
+for (TA, transA, fA) in batched_gemm_args, (TB, transB, fB) in batched_gemm_args
     @eval function NNlib.batched_mul!(C::CuArray{T, 3}, A::$TA, B::$TB) where {T<:CUBLAS.CublasFloat}
-        CuArrays.CUBLAS.gemm_strided_batched!($transA, $transB, one(T), NNlib._unbatch(A), NNlib._unbatch(B), zero(T), C)
+
+        Abase, Bbase = NNlib._unbatch(A), NNlib._unbatch(B)
+
+        # Best case, we can call batched_gemm! immediately:
+        if Base.stride(Abase,1) == Base.stride(Bbase,1) == Base.stride(C,1) == 1
+            CuArrays.CUBLAS.gemm_strided_batched!($transA, $transB, one(T), NNlib._unbatch(A), NNlib._unbatch(B), zero(T), C)
+
+        # Second-best, can we fix it by Perm.ing the base, and adjusing 'T' label?
+        # But only if we won't produce BatchedTranspose(BatchedAdjoint(complex array)).
+        elseif Base.stride(Abase,2) == 1 && !(T<:Complex && $TA<:NNlib.BatchedAdjoint)
+            newAbase = NNlib.batched_transpose(PermutedDimsArray(Abase, (2,1,3)))
+            return NNlib.batched_mul!(C, $fA(newAbase), B)
+        elseif Base.stride(Bbase,2) == 1 && !(T<:Complex && $TB<:NNlib.BatchedAdjoint)
+            newBbase = NNlib.batched_transpose(PermutedDimsArray(Bbase, (2,1,3)))
+            return NNlib.batched_mul!(C, A, $fB(newBbase))
+
+        # Fallback, e.g when Base.stride(A,3)==1
+        else
+            NNlib.batched_mul_generic!(C, A, B)
+        end
         C
     end
 end
+
+# This is obviously the wrong place for this! Not sure where it should go.
+# Base.unsafe_convert(::Type{CUDAdrv.CuPtr{T}}, A::PermutedDimsArray) where {T} = 
+#     Base.unsafe_convert(CUDAdrv.CuPtr{T}, parent(A))
+# Recursive version, will handle e.g. NamedDimsArray
+function Base.unsafe_convert(::Type{CUDAdrv.CuPtr{T}}, A::AbstractArray) where {T}
+    if A === parent(A)
+        throw(MethodError(Base.unsafe_convert, Tuple{CUDAdrv.CuPtr{T}, typeof(A)}))
+    else
+        return Base.unsafe_convert(CUDAdrv.CuPtr{T}, parent(A))
+    end
+end
+
+
+# This is https://github.com/JuliaLang/julia/pull/35304, here just for testing now:
+Base.similar(A::PermutedDimsArray, T::Type, dims::Base.Dims) = similar(parent(A), T, dims)
