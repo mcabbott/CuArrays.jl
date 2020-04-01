@@ -16,4 +16,26 @@
     @test cu(Ca) ≈ batched_mul(cu(A), batched_adjoint(cu(B)))
 end
 
+using CuArrays: is_strided_cu
+using LinearAlgebra
+@testset "is_strided_cu" begin
+
+    M = cu(ones(10,10))
+
+    @test is_strided_cu(M)
+    @test is_strided_cu(view(M, 1:2:5,:))
+    @test is_strided_cu(PermutedDimsArray(M, (2,1)))
+
+    @test !is_strided_cu(reshape(view(M, 1:2:10,:), 10,:))
+    @test !is_strided_cu((M.+im)')
+    @test !is_strided_cu(ones(10,10))
+    @test !is_strided_cu(Diagonal(ones(3)))
+
+    #=
+    using NamedDims
+    @test is_strided(NamedDimsArray(M,(:a, :b))) # and 0.029 ns, 0 allocations
+    =#
+
+end
+
 end
