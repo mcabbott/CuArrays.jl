@@ -37,7 +37,3 @@ end
 NNlib._batched_gemm!(::Type{<:CuArray}, transA::Char, transB::Char, α::Number, A, B, β::Number, C) =
     CuArrays.CUBLAS.gemm_strided_batched!(transA, transB, α, A, B, β, C)
 
-# This is https://github.com/JuliaLang/julia/pull/35304, here just for testing now:
-Base.similar(A::PermutedDimsArray, T::Type, dims::Base.Dims) = similar(parent(A), T, dims)
-# @which Base.similar(PermutedDimsArray(rand(2,2), (2,1)), Int, Base.Dims{2}((3,3)))
-
